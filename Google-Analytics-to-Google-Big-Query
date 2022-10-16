@@ -1,3 +1,5 @@
+### Script for sending Google Ads data to GBQ
+
 #pip install --upgrade pip
 #pip install gaapi4py
 #pip install pandas-gbq
