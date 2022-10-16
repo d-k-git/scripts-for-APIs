@@ -1,0 +1,148 @@
+### https://developers.google.com/google-ads/api/fields/v8/ad_group_ad
+
+
+import argparse
+import sys
+import pandas as pd
+import datetime
+import requests
+from google.ads.googleads.client import GoogleAdsClient
+from google.ads.googleads.errors import GoogleAdsException
+
+#from pprint import pprint
+
+#_DEFAULT_PAGE_SIZE = 1000
+
+customer_id = '55555555'
+
+client = GoogleAdsClient.load_from_storage("ga.yaml")
+
+
+ga_service = client.get_service("GoogleAdsService")
+customer_service = client.get_service("CustomerService")
+resource_name = customer_service.customer_path(customer_id)
+
+customer = customer_service.get_customer(resource_name=resource_name)
+
+
+ga_service = client.get_service("GoogleAdsService")
+
+query = """
+    SELECT
+  customer.descriptive_name,
+  campaign.id, 
+  campaign.name, 
+  campaign.status, 
+  ad_group.id, 
+  ad_group.name, 
+  ad_group.status, 
+  ad_group_ad.ad.id, 
+  ad_group_ad.ad.final_urls, 
+  ad_group_ad.ad.tracking_url_template
+FROM ad_group_ad
+WHERE segments.date DURING TODAY AND campaign.status = 'ENABLED' AND ad_group.status = 'ENABLED' """
+
+
+search_request = client.get_type("SearchGoogleAdsRequest")
+search_request.customer_id = customer_id
+search_request.query = query
+#search_request.page_size = _DEFAULT_PAGE_SIZE
+
+results = ga_service.search(request=search_request)
+
+df1 = []
+
+for row in results:
+    
+    campaign = row.campaign
+    ad_group = row.ad_group
+    ad_group_ad  = row.ad_group_ad
+        #criterion = row.ad_group_criterion
+        #metrics = row.metrics
+    df2 = pd.DataFrame({'account_name':[customer.descriptive_name], 'campaign.id': [campaign.id], 'campaign.name': [campaign.name],'ad_group.id':[ad_group.id], 'ad_group.name': [ad_group.name],'ad_group_ad.ad.id':[ad_group_ad.ad.id], 'ad_group_ad.ad.final_urls': [ad_group_ad.ad.final_urls], 'ad_group_ad.ad.tracking_url_template': [ad_group_ad.ad.tracking_url_template]}) 
+    print(              
+                customer.descriptive_name,
+                campaign.id,
+                campaign.name,
+                campaign.status,
+                ad_group.id, 
+                ad_group.name, 
+                ad_group.status, 
+                ad_group_ad.ad.id, 
+                ad_group_ad.ad.final_urls, 
+                ad_group_ad.ad.tracking_url_template
+            )      
+        
+        
+    df1.append(df2)
+    df3 = pd.concat(df1, ignore_index=True) 
+    
+    
+df4 = []
+for x in df3['ad_group_ad.ad.final_urls']:
+    x = str(x)
+    print(x)    
+    df4.append(x)
+df5 = pd.DataFrame(df4)
+df5.columns = ['Link_str']
+
+
+df6 = pd.concat([df3, df5], axis=1) 
+#df6.head(50)
+
+df7 = df6.filter(items = ['account_name','campaign.id', 'campaign.name',  'ad_group.id','ad_group.name', 'ad_group_ad.ad.id','Link_str','ad_group_ad.ad.tracking_url_template'])
+df8 =  df7[df7[('Link_str')].str.contains('http')]
+#Remove quotes and parentheses around urls
+df8['Link_str'] = df8['Link_str'].str.replace("'",'')
+df8['Link_str'] = df8['Link_str'].str.replace('"','')
+df8['Link_str'] = df8['Link_str'].str.split("[").str[1]
+df8['Link_str'] = df8['Link_str'].str.split("]").str[0]
+#df8.head()
+
+#cut lpurl
+df8['ad_group_ad.ad.tracking_url_template'] = df8['ad_group_ad.ad.tracking_url_template'].str.split('{lpurl}').str[1]
+
+#Concantenate columns 
+df8['Links'] =  df8['Link_str']+df8['ad_group_ad.ad.tracking_url_template']
+
+#where no tail -  substitute the link
+
+df8.Links.fillna(df8.Link_str, inplace=True)
+
+#filter columns and rename - not to edit the database
+df_AD_PERFORMANCE_REPORT = df8.filter(items = ['account_name','campaign.id',  'campaign.name','ad_group.id','ad_group.name','ad_group_ad.ad.id','Links'])
+df_AD_PERFORMANCE_REPORT.columns= ['account_name','CampaignId', 'CampaignName', 'AdGroupId','AdGroupName','Ad ID','Links']
+#df_AD_PERFORMANCE_REPORT.head()
+
+
+uniq = df_AD_PERFORMANCE_REPORT['Links'].unique()
+df_uniq = pd.DataFrame(uniq)
+df_uniq.columns = ['uniq']
+dfs = []
+## Start checking links
+n = 1
+for url in df_uniq['uniq']:
+    now = datetime.datetime.now()
+    link_time = now.strftime('%Y-%m-%d %H:%M:%S')
+    r = requests.head(url)
+    df = pd.DataFrame({'Links': [url], 'Codes': [r.status_code], 'Time': [link_time]})
+    print('Checked: ' + str(n) + ' from ' + str(len(df_uniq['uniq'])) + ' ads.' ' Status: ' + str(
+        r.status_code) + '  Time: ' + str(link_time))
+
+    n += 1
+    # time.sleep(5)
+    # df_status100 = pd.DataFrame(df_status)
+    # print(df_status100)
+    dfs.append(df)
+
+uniq_links_code_df = pd.concat(dfs, ignore_index=True)
+# uniq_links_code_df.tail()
+
+joined_df = pd.merge(df_AD_PERFORMANCE_REPORT, uniq_links_code_df, how='left', on='Links')
+
+
+df_AD_PERFORMANCE_REPORT_final = joined_df.filter(items=['AccountName','CampaignId','CampaignName',  'Links', 'Codes', 'Ad ID','AdGroupId','AdGroupName','Time'])
+
+
+df_AD_PERFORMANCE_REPORT_final_404 = pd.DataFrame(df_AD_PERFORMANCE_REPORT_final.loc[~df_AD_PERFORMANCE_REPORT_final['Codes'].isin([200, 301, 302, 304, 403,500])])
+df_AD_PERFORMANCE_REPORT_final_404
