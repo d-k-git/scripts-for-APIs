@@ -1,0 +1,70 @@
+#pip install --upgrade pip
+#pip install gaapi4py
+#pip install pandas-gbq
+#pip list 
+
+
+import pandas as pd
+import numpy as np
+import datetime 
+from pandas.io import gbq
+from pandas import Series, DataFrame
+from gaapi4py import GAClient 
+
+
+
+
+# connect the key file to get access to GA API
+c = GAClient(json_keyfile='gakey.json')
+
+# get yesterday's date and write it to yesterday variable
+yesterday = datetime.date.fromordinal(datetime.date.today().toordinal()-1).strftime("%Y-%m-%d")
+
+
+request_body = {
+    'view_id': '1468300000',
+    'start_date': '2021-03-01', 
+    'end_date': yesterday, 
+    'dimensions': {
+        'ga:productName',
+        'ga:date',
+        'ga:sourceMedium',
+        'ga:campaign',
+        'ga:userType',
+        'ga:shoppingStage'
+    },
+    'metrics': {
+        'ga:revenuePerItem',
+        'ga:itemRevenue',
+        'ga:itemQuantity',
+        'ga:uniquePurchases',
+        'ga:itemsPerPurchase',
+        'ga:users',
+        'ga:sessions'
+
+        
+    },
+    'filter': 'ga:sourceMedium==google / cpc' 
+    'filter': 'ga:itemRevenue!=0' 
+}
+
+response = c.get_all_data(request_body)
+
+
+#response['info'] #sampling and 'golden' metadata
+#response['data'] # pandas df that contains date from GA
+
+
+# write the GA response to the dataframe
+df=response['data']
+
+
+# transform the order of the columns, because each time we get columns from GA in a different order
+df = df[['date','sourceMedium','campaign', 'userType','users','sessions','shoppingStage','itemsPerPurchase', 'uniquePurchases', 'itemQuantity','itemRevenue','revenuePerItem']]
+
+
+# Add to GBQ-table
+
+df.to_gbq(destination_table='sane.first',
+                    project_id='gbqtest-1111111',
+                    if_exists='append')
