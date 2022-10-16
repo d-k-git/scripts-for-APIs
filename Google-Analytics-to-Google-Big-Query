@@ -1,4 +1,4 @@
-### Script for sending Google Ads data to GBQ
+### Script for sending Google Analytics data to GBQ
 
 #pip install --upgrade pip
 #pip install gaapi4py
